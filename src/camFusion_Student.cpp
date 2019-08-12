@@ -2,6 +2,7 @@
 #include <iostream>
 #include <algorithm>
 #include <numeric>
+#include <set>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -12,7 +13,13 @@ using namespace std;
 
 
 // Create groups of Lidar points whose projection into the camera falls into the same bounding box
-void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints, float shrinkFactor, cv::Mat &P_rect_xx, cv::Mat &R_rect_xx, cv::Mat &RT)
+void clusterLidarWithROI(
+    std::vector<BoundingBox> &boundingBoxes, 
+    std::vector<LidarPoint> &lidarPoints, 
+    float shrinkFactor, 
+    cv::Mat &P_rect_xx, 
+    cv::Mat &R_rect_xx, 
+    cv::Mat &RT)
 {
     // loop over all Lidar points and associate them to a 2D bounding box
     cv::Mat X(4, 1, cv::DataType<double>::type);
@@ -20,6 +27,7 @@ void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<Li
 
     for (auto it1 = lidarPoints.begin(); it1 != lidarPoints.end(); ++it1)
     {
+        //cout << "lidar coord " << it1->x << " " << it1->y << " " << it1->z << endl;
         // assemble vector for matrix-vector-multiplication
         X.at<double>(0, 0) = it1->x;
         X.at<double>(1, 0) = it1->y;
@@ -31,6 +39,9 @@ void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<Li
         cv::Point pt;
         pt.x = Y.at<double>(0, 0) / Y.at<double>(0, 2); // pixel coordinates
         pt.y = Y.at<double>(1, 0) / Y.at<double>(0, 2);
+
+        //cout << "pixel coord " << pt.x << " " << pt.y << endl;
+        //cin.get();
 
         vector<vector<BoundingBox>::iterator> enclosingBoxes; // pointers to all bounding boxes which enclose the current Lidar point
         for (vector<BoundingBox>::iterator it2 = boundingBoxes.begin(); it2 != boundingBoxes.end(); ++it2)
@@ -68,6 +79,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
     for(auto it1=boundingBoxes.begin(); it1!=boundingBoxes.end(); ++it1)
     {
+        cout << "BB has " << it1->lidarPoints.size() << " lidar points" << endl;
         // create randomized color for current 3D object
         cv::RNG rng(it1->boxID);
         cv::Scalar currColor = cv::Scalar(rng.uniform(0,150), rng.uniform(0, 150), rng.uniform(0, 150));
@@ -104,9 +116,9 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
         // augment object with some key data
         char str1[200], str2[200];
         sprintf(str1, "id=%d, #pts=%d", it1->boxID, (int)it1->lidarPoints.size());
-        putText(topviewImg, str1, cv::Point2f(left-250, bottom+50), cv::FONT_ITALIC, 2, currColor);
+        putText(topviewImg, str1, cv::Point2f(left-250, bottom+50), cv::FONT_ITALIC, 1, currColor);
         sprintf(str2, "xmin=%2.2f m, yw=%2.2f m", xwmin, ywmax-ywmin);
-        putText(topviewImg, str2, cv::Point2f(left-250, bottom+125), cv::FONT_ITALIC, 2, currColor);  
+        putText(topviewImg, str2, cv::Point2f(left-250, bottom+125), cv::FONT_ITALIC, 1, currColor);  
     }
 
     // plot distance markers
@@ -125,7 +137,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
     if(bWait)
     {
-        cv::waitKey(0); // wait for key to be pressed
+        cv::waitKey(100); // wait for key to be pressed
     }
 }
 
@@ -152,7 +164,52 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 }
 
 
-void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
+void matchBoundingBoxes(
+    std::vector<cv::DMatch> &matches,
+    std::map<int, int> &bbBestMatches, 
+    DataFrame &prevFrame, 
+    DataFrame &currFrame)
 {
-    // ...
+    cout << "matchBoundingBoxes" << endl;
+    std::map<std::pair<int, int>, size_t> bbMatchesCounter;
+    for (const auto & match : matches)
+    {
+        // keypoint indices are same as descripors
+        int prevFrameDescIndex = match.queryIdx; 
+        int currFrameDescIndex = match.trainIdx;
+        const auto & prevFramePt = prevFrame.keypoints.at(prevFrameDescIndex).pt;
+        const auto & currFramePt = currFrame.keypoints.at(currFrameDescIndex).pt;
+        for (const auto & prevFrameBB : prevFrame.boundingBoxes)
+        {
+            if (!prevFrameBB.roi.contains(prevFramePt))
+                continue;
+            for (const auto & currFrameBB : currFrame.boundingBoxes)
+            {
+                if (!currFrameBB.roi.contains(currFramePt))
+                    continue;
+                bbMatchesCounter[std::make_pair(prevFrameBB.boxID, currFrameBB.boxID)]++;
+            }
+        }
+    }
+    std::vector<std::tuple<int, int, size_t>> bbMatches;
+    for (const auto & pair : bbMatchesCounter)
+        bbMatches.push_back(std::make_tuple(pair.first.first, pair.first.second, pair.second));
+    
+    // sort by matches count
+    std::sort(bbMatches.begin(), bbMatches.end(), 
+        [](const std::tuple<int, int, size_t> & l, const std::tuple<int, int, size_t> & r)
+    {
+        return std::get<2>(l) > std::get<2>(r);
+    });
+
+    std::set<int> visitedPrevFrameBBs;
+    bbBestMatches.clear();
+    for (const auto & tup : bbMatches)
+    {
+        if (visitedPrevFrameBBs.count(std::get<0>(tup)))
+            continue;
+        visitedPrevFrameBBs.insert(std::get<0>(tup));
+        bbBestMatches.insert(std::make_pair(std::get<0>(tup), std::get<1>(tup)));
+        cout << std::get<0>(tup) << " - " << std::get<1>(tup) << " : " <<  std::get<2>(tup) << endl;
+    }
 }
