@@ -204,7 +204,8 @@ int main(int argc, const char *argv[])
             string selectorType = "SEL_NN";       // SEL_NN, SEL_KNN
 
             matchDescriptors((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints,
-                             (dataBuffer.end() - 2)->descriptors, (dataBuffer.end() - 1)->descriptors,
+                             (dataBuffer.end() - 2)->descriptors  /*query*/,
+                             (dataBuffer.end() - 1)->descriptors /*train*/,
                              matches, descriptorType, matcherType, selectorType);
 
             // store matches in current data frame
