@@ -6,6 +6,8 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include <pcl/segmentation/extract_clusters.h>
+
 #include "camFusion.hpp"
 #include "dataStructures.h"
 
@@ -79,7 +81,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
     for(auto it1=boundingBoxes.begin(); it1!=boundingBoxes.end(); ++it1)
     {
-        cout << "BB has " << it1->lidarPoints.size() << " lidar points" << endl;
+        //cout << "BB has " << it1->lidarPoints.size() << " lidar points" << endl;
         // create randomized color for current 3D object
         cv::RNG rng(it1->boxID);
         cv::Scalar currColor = cv::Scalar(rng.uniform(0,150), rng.uniform(0, 150), rng.uniform(0, 150));
@@ -165,23 +167,21 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
 {
     // compute distance ratios between all matched keypoints
     vector<double> distRatios; // stores the distance ratios for all keypoints between curr. and prev. frame
-    for (auto it1 = kptMatches.begin(); it1 != kptMatches.end() - 1; ++it1)
+    for (auto it1 = kptMatches.begin(); it1 != kptMatches.end() ; ++it1)
     { // outer kpt. loop
 
         // get current keypoint and its matched partner in the prev. frame
-        int prevIdx = it1->queryIdx;
-        int currIdx = it1->trainIdx;
-        cv::KeyPoint kpOuterCurr = kptsCurr.at(currIdx);
-        cv::KeyPoint kpOuterPrev = kptsPrev.at(prevIdx);
+        cv::KeyPoint kpOuterCurr = kptsCurr.at(it1->trainIdx);
+        cv::KeyPoint kpOuterPrev = kptsPrev.at(it1->queryIdx);
 
-        for (auto it2 = kptMatches.begin() + 1; it2 != kptMatches.end(); ++it2)
+        for (auto it2 = it1 + 1; it2 != kptMatches.end(); ++it2)
         { // inner kpt.-loop
 
             double minDist = 100.0; // min. required distance
 
             // get next keypoint and its matched partner in the prev. frame
-            cv::KeyPoint kpInnerCurr = kptsCurr.at(currIdx);
-            cv::KeyPoint kpInnerPrev = kptsPrev.at(prevIdx);
+            cv::KeyPoint kpInnerCurr = kptsCurr.at(it2->trainIdx);
+            cv::KeyPoint kpInnerPrev = kptsPrev.at(it2->queryIdx);
 
             // compute distances and distance ratios
             double distCurr = cv::norm(kpOuterCurr.pt - kpInnerCurr.pt);
@@ -207,18 +207,75 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
     // STUDENT TASK (replacement for meanDistRatio)
     std::sort(distRatios.begin(), distRatios.end());
     long medIndex = floor(distRatios.size() / 2.0);
-    double medDistRatio = distRatios.size() % 2 == 0 ? (distRatios[medIndex - 1] + distRatios[medIndex]) / 2.0 : distRatios[medIndex]; // compute median dist. ratio to remove outlier influence
+    double medDistRatio = distRatios.size() % 2 == 0
+        ? (distRatios[medIndex - 1] + distRatios[medIndex]) / 2.0 
+        : distRatios[medIndex]; // compute median dist. ratio to remove outlier influence
 
     double dT = 1 / frameRate;
     TTC = -dT / (1 - medDistRatio);
-    // EOF STUDENT TASK
+    
+    cout << "computeTTCCamera: " << "medDistRatio=" << medDistRatio << " TTC=" << TTC << endl;
+}
+
+pcl::PointCloud<pcl::PointXYZ>::Ptr RemoveLidarOutliers(const std::vector<LidarPoint> & points)
+{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    for (const auto & p : points)
+    {
+        cloud->push_back(pcl::PointXYZ((float)p.x, (float)p.y, (float)p.z));
+    }
+
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+    tree->setInputCloud (cloud);
+
+    pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+    ec.setClusterTolerance (0.3); // 30cm
+    ec.setSearchMethod (tree);
+    ec.setInputCloud (cloud);
+    std::vector<pcl::PointIndices> cluster_indices;
+    ec.extract (cluster_indices);
+
+    if (cluster_indices.empty())
+        return pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+
+    size_t largestClusterIdx;
+    size_t largestClusterSize = 0;
+    for (size_t i = 0; i < cluster_indices.size(); i++)
+    {
+        if (cluster_indices[i].indices.size() > largestClusterSize)
+        {
+            largestClusterSize = cluster_indices[i].indices.size();
+            largestClusterIdx = i;
+        }
+    }
+
+    //cout << "largestClusterSize=" << largestClusterSize << endl;
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cluster(new pcl::PointCloud<pcl::PointXYZ>);
+    for (size_t i : cluster_indices.at(largestClusterIdx).indices)
+    {
+        cluster->points.push_back(cloud->points.at(i));
+    }
+
+    return cluster;
 }
 
 
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
                      std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
 {
-    // ...
+    auto prevObstacle = RemoveLidarOutliers(lidarPointsPrev);
+    auto currObstacle = RemoveLidarOutliers(lidarPointsCurr);
+    double minXPrev = 1e9, minXCurr = 1e9;
+    for (const auto & p : prevObstacle->points)
+        minXPrev = minXPrev > p.x ? p.x : minXPrev;
+    for (const auto & p : currObstacle->points)
+        minXCurr = minXCurr > p.x ? p.x : minXCurr;
+
+    double dT = 1 / frameRate;
+    TTC = minXCurr * dT / (minXPrev - minXCurr);
+    cout << "computeTTCLidar: " << "minCurr=" << minXCurr << " minPrev=" << minXPrev 
+        << " TTC=" << TTC << endl;
 }
 
 
@@ -228,7 +285,7 @@ void matchBoundingBoxes(
     DataFrame &prevFrame, 
     DataFrame &currFrame)
 {
-    cout << "matchBoundingBoxes" << endl;
+    //cout << "matchBoundingBoxes" << endl;
     std::map<std::pair<int, int>, size_t> bbMatchesCounter;
     for (const auto & match : matches)
     {
@@ -268,6 +325,6 @@ void matchBoundingBoxes(
             continue;
         visitedPrevFrameBBs.insert(std::get<0>(tup));
         bbBestMatches.insert(std::make_pair(std::get<0>(tup), std::get<1>(tup)));
-        cout << std::get<0>(tup) << " - " << std::get<1>(tup) << " : " <<  std::get<2>(tup) << endl;
+        //cout << std::get<0>(tup) << " - " << std::get<1>(tup) << " : " <<  std::get<2>(tup) << endl;
     }
 }
