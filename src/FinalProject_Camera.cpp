@@ -36,7 +36,7 @@ int main(int argc, const char *argv[])
     string imgFileType = ".png";
     int imgStartIndex = 0; // first file index to load (assumes Lidar and camera names have identical naming convention)
     int imgEndIndex = 30;   // last file index to load
-    int imgStepWidth = 3; 
+    int imgStepWidth = 1; 
     int imgFillWidth = 4;  // no. of digits which make up the file index (e.g. img-0001.png)
 
     // object detection
@@ -94,6 +94,7 @@ int main(int argc, const char *argv[])
         dataBuffer.push_back(frame);
 
         cout << "#1 : LOAD IMAGE INTO BUFFER done" << endl;
+        cout << imgFullFilename << endl;
 
 
         /* DETECT & CLASSIFY OBJECTS */

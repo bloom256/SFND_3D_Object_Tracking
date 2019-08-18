@@ -216,10 +216,9 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
         : distRatios[medIndex]; // compute median dist. ratio to remove outlier influence
 
     double dT = 1 / frameRate;
-    double heightRatio = medDistRatio;
-    TTC = dT / (heightRatio - 1);
+    TTC = dT / (medDistRatio - 1);
     
-    cout << "computeTTCCamera: " << "heightRatio=" << heightRatio << " TTC=" << TTC << endl;
+    cout << "computeTTCCamera: " << "TTC=" << TTC << endl;
 }
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr RemoveLidarOutliers(const std::vector<LidarPoint> & points)
@@ -234,9 +233,9 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RemoveLidarOutliers(const std::vector<LidarP
     tree->setInputCloud (cloud);
 
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-    ec.setClusterTolerance (0.3); // 30cm
+    ec.setClusterTolerance (0.1);
     ec.setSearchMethod (tree);
-    ec.setMinClusterSize (30);
+    ec.setMinClusterSize(5);
     ec.setInputCloud (cloud);
     std::vector<pcl::PointIndices> cluster_indices;
     ec.extract (cluster_indices);
@@ -244,26 +243,11 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RemoveLidarOutliers(const std::vector<LidarP
     if (cluster_indices.empty())
         return pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
 
-    size_t largestClusterIdx;
-    size_t largestClusterSize = 0;
-    for (size_t i = 0; i < cluster_indices.size(); i++)
-    {
-        if (cluster_indices[i].indices.size() > largestClusterSize)
-        {
-            largestClusterSize = cluster_indices[i].indices.size();
-            largestClusterIdx = i;
-        }
-    }
-
-    //cout << "largestClusterSize=" << largestClusterSize << endl;
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cluster(new pcl::PointCloud<pcl::PointXYZ>);
-    for (size_t i : cluster_indices.at(largestClusterIdx).indices)
-    {
-        cluster->points.push_back(cloud->points.at(i));
-    }
-
-    return cluster;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr result(new pcl::PointCloud<pcl::PointXYZ>);
+    for (const auto & cluster : cluster_indices)
+        for (size_t idx : cluster.indices)
+            result->points.push_back(cloud->points.at(idx));
+    return result;
 }
 
 
@@ -280,9 +264,8 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 
     double dT = 1 / frameRate;
     double distRatio = minXCurr / minXPrev;
-    TTC =  dT / (1.0/distRatio - 1);
-    cout << "computeTTCLidar: " << "minCurr=" << minXCurr << " minPrev=" << minXPrev 
-        << " distRatio=" << distRatio << " TTC=" << TTC << endl;
+    TTC =  minXCurr * dT / (minXPrev - minXCurr);
+    cout << "computeTTCLidar: " << "TTC=" << TTC << endl;
 }
 
 void matchBoundingBoxes(
