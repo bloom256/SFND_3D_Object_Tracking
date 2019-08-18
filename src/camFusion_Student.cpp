@@ -145,7 +145,9 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
 
 // associate a given bounding box with the keypoints it contains
-void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev, 
+void clusterKptMatchesWithROI(BoundingBox &prevBB,
+                              BoundingBox &currBB,
+                              std::vector<cv::KeyPoint> &kptsPrev, 
                               std::vector<cv::KeyPoint> &kptsCurr, 
                               std::vector<cv::DMatch> &kptMatches)
 {
@@ -153,12 +155,15 @@ void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint
     {
         int currIdx = it->trainIdx;
         cv::KeyPoint kpCurr = kptsCurr.at(currIdx);
-        if (!boundingBox.roi.contains(kpCurr.pt))
-                continue;
-        boundingBox.kptMatches.push_back(*it);
+        if (!currBB.roi.contains(kpCurr.pt))
+            continue;
+        int prevIdx = it->queryIdx;
+        cv::KeyPoint kpPrev = kptsPrev.at(prevIdx);
+        if (!prevBB.roi.contains(kpPrev.pt))
+            continue;
+        currBB.kptMatches.push_back(*it);
     }
 }
-
 
 // Compute time-to-collision (TTC) based on keypoint correspondences in successive images
 void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, 
@@ -203,7 +208,6 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
         return;
     }
 
-
     // STUDENT TASK (replacement for meanDistRatio)
     std::sort(distRatios.begin(), distRatios.end());
     long medIndex = floor(distRatios.size() / 2.0);
@@ -212,9 +216,10 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
         : distRatios[medIndex]; // compute median dist. ratio to remove outlier influence
 
     double dT = 1 / frameRate;
-    TTC = -dT / (1 - medDistRatio);
+    double heightRatio = medDistRatio;
+    TTC = dT / (heightRatio - 1);
     
-    cout << "computeTTCCamera: " << "medDistRatio=" << medDistRatio << " TTC=" << TTC << endl;
+    cout << "computeTTCCamera: " << "heightRatio=" << heightRatio << " TTC=" << TTC << endl;
 }
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr RemoveLidarOutliers(const std::vector<LidarPoint> & points)
@@ -231,6 +236,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RemoveLidarOutliers(const std::vector<LidarP
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
     ec.setClusterTolerance (0.3); // 30cm
     ec.setSearchMethod (tree);
+    ec.setMinClusterSize (30);
     ec.setInputCloud (cloud);
     std::vector<pcl::PointIndices> cluster_indices;
     ec.extract (cluster_indices);
@@ -273,11 +279,11 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
         minXCurr = minXCurr > p.x ? p.x : minXCurr;
 
     double dT = 1 / frameRate;
-    TTC = minXCurr * dT / (minXPrev - minXCurr);
+    double distRatio = minXCurr / minXPrev;
+    TTC =  dT / (1.0/distRatio - 1);
     cout << "computeTTCLidar: " << "minCurr=" << minXCurr << " minPrev=" << minXPrev 
-        << " TTC=" << TTC << endl;
+        << " distRatio=" << distRatio << " TTC=" << TTC << endl;
 }
-
 
 void matchBoundingBoxes(
     std::vector<cv::DMatch> &matches,
