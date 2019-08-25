@@ -176,7 +176,7 @@ void detKeypointsShiTomasi(vector<cv::KeyPoint> &keypoints, cv::Mat &img, bool b
         string windowName = "Shi-Tomasi Corner Detector Results";
         cv::namedWindow(windowName, 6);
         imshow(windowName, visImage);
-        cv::waitKey(0);
+        //cv::waitKey(0);
     }
 }
 
@@ -232,7 +232,7 @@ void detKeypointsHarris(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img, bool
         string windowName = "Harris detector results";
         cv::namedWindow(windowName);
         cv::imshow(windowName, dst_norm_scaled);
-        cv::waitKey(0);
+        //cv::waitKey(0);
     }
 }
 
@@ -308,6 +308,6 @@ void detKeypointsModern(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img, std:
         string windowName = detectorType + " Results";
         cv::namedWindow(windowName, 2);
         imshow(windowName, visImage);
-        cv::waitKey(0);
+        //cv::waitKey(0);
     }
 }

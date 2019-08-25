@@ -22,13 +22,15 @@
 
 using namespace std;
 
-void IterateImages(
+pair<vector<double>, vector<double>> IterateImages(
     const string & detectorType,
     const string & descriptorType,
     const string & matcherType)
 {
-    cout << "\n" << detectorType << " - " << descriptorType
-       << " (" << matcherType << ")\n" << endl;
+    string outFileName = "./" + detectorType + "-" + descriptorType + "(" + matcherType + ").csv";
+    cout << "\nWriting " << outFileName  << "\n" << endl;
+    std::ofstream outStream(outFileName);
+    outStream << "frameNumber,ttcLidar,ttcCamera" << endl;
 
     const string matchDescriptorType = "DES_BINARY";
     const string selectorType = "SEL_KNN";
@@ -43,8 +45,8 @@ void IterateImages(
     string imgPrefix = "KITTI/2011_09_26/image_02/data/000000"; // left camera, color
     string imgFileType = ".png";
     int imgStartIndex = 0; // first file index to load (assumes Lidar and camera names have identical naming convention)
-    int imgEndIndex = 30;   // last file index to load
-    int imgStepWidth = 10; 
+    int imgEndIndex = 50;   // last file index to load
+    int imgStepWidth = 1; 
     int imgFillWidth = 4;  // no. of digits which make up the file index (e.g. img-0001.png)
 
     // object detection
@@ -81,6 +83,12 @@ void IterateImages(
     int dataBufferSize = 2;       // no. of images which are held in memory (ring buffer) at the same time
     vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
     bool bVis = false;            // visualize results
+
+
+    double averageTTCCam = 0;
+    int camAverageCounter = 0;
+    vector<double> lidarTTCs;
+    vector<double> cameraTTCs;
 
     /* MAIN LOOP OVER ALL IMAGES */
     try
@@ -125,9 +133,9 @@ void IterateImages(
             //bVis = true;
             if(bVis)
             {
-                show3DObjects((dataBuffer.end()-1)->boundingBoxes, cv::Size(maxY * 2, maxX), cv::Size(800, 800), true);
+                show3DObjects((dataBuffer.end()-1)->boundingBoxes, cv::Size(maxY * 2, maxX / 2), cv::Size(800, 800), true);
             }
-            bVis = false;
+            //bVis = false;
             //cout << "#4 : CLUSTER LIDAR POINT CLOUD done" << endl;
                                              // REMOVE THIS LINE BEFORE PROCEEDING WITH THE FINAL PROJECT
             //continue; // skips directly to the next image without processing what comes beneath
@@ -213,7 +221,7 @@ void IterateImages(
                         }
                     }
                     // compute TTC for current match
-                    if( currBB->lidarPoints.size()>0 && prevBB->lidarPoints.size()>0 ) // only compute TTC if we have Lidar points
+                    if( currBB->lidarPoints.size()>100 && prevBB->lidarPoints.size()>100 ) // only compute TTC if we have Lidar points
                     {
                         //// STUDENT ASSIGNMENT
                         //// TASK FP.2 -> compute time-to-collision based on Lidar data (implement -> computeTTCLidar)
@@ -226,7 +234,7 @@ void IterateImages(
                         double ttcCamera;
                         clusterKptMatchesWithROI(*prevBB, *currBB,(dataBuffer.end() - 2)->keypoints, 
                             (dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->kptMatches);                    
-                        bVis = false;
+                        //bVis = false;
                         if (bVis)
                         {
                             cv::Mat matchImg = ((dataBuffer.end() - 1)->cameraImg).clone();
@@ -247,6 +255,20 @@ void IterateImages(
                         }
                         computeTTCCamera((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints,
                             currBB->kptMatches, sensorFrameRate, ttcCamera);
+
+                        if (ttcCamera != INFINITY && (imgIndex + imgStartIndex) < 41)
+                        {
+                            averageTTCCam += ttcCamera;
+                            camAverageCounter++;
+                        }
+                        if (isnan(ttcCamera))
+                            throw runtime_error("ttcCamera is NAN");
+
+                        lidarTTCs.push_back(ttcLidar);
+                        cameraTTCs.push_back(ttcCamera);
+
+                        cout << "Frame " << imgNumber.str() << " ttcLidar " << ttcLidar << " ttcCamera " << ttcCamera << endl;
+                        outStream << imgIndex << "," << ttcLidar << "," << ttcCamera << endl;
                         //// EOF STUDENT ASSIGNMENT
                         //bVis = true;
                         if (bVis)
@@ -261,20 +283,26 @@ void IterateImages(
                             cv::namedWindow(windowName, 4);
                             cv::imshow(windowName, visImg);
                             //cout << "Press key to continue to next frame" << endl;
-                            //cv::waitKey(0);
+                            cv::waitKey(10);
                         }
-                        bVis = false;
+                        //bVis = false;
                     } // eof TTC computation
                 } // eof loop over all BB matches            
             }
         }
     }
-    catch (cv::Exception & ex)
+    catch (exception & ex)
     {
         cout << ex.what() << endl;
         //cout << detectorType << " detector is not compatible with "
         //    << descriptorType << " descriptor" << endl;
+        return make_pair(vector<double>(), vector<double>());
     }
+
+    if (camAverageCounter > 0)
+        cout << "average camera TTC " << averageTTCCam / camAverageCounter;
+    
+    return make_pair(lidarTTCs, cameraTTCs);
 }
 
 /* MAIN PROGRAM */
@@ -283,9 +311,36 @@ int main(int argc, const char *argv[])
     vector<string> detectorTypes = { "SHITOMASI", "HARRIS", "FAST", "BRISK", "ORB", "AKAZE", "SIFT" };
     vector<string> descriptorTypes  = { "BRISK", "BRIEF", "ORB", "FREAK", "AKAZE", "SIFT" };
     vector<string> matcherTypes = { "MAT_BF", "MAT_FLANN" };
+    vector<double> lidarTTC;
+    map<string, vector<double>> cameraTTC;
     for (const string & detectorType : detectorTypes)
+    {
         for (const string & descriptorType : descriptorTypes)
+        {
             for (const string & matcherType : matcherTypes)
-                IterateImages(detectorType, descriptorType, matcherType);
+            {
+                auto res = IterateImages(detectorType, descriptorType, matcherType);
+                if (!res.first.empty() && lidarTTC.empty())
+                    lidarTTC = res.first;
+                string combName = detectorType + "-" + descriptorType + "(" + matcherType + ")";
+                if (!res.second.empty())
+                    cameraTTC[combName] = res.second;
+            }
+        }
+    }
+    std::ofstream outStream("./Results.csv");
+    string header = "frame,lidar";
+    for (const auto & pair : cameraTTC)
+        header += "," + pair.first;
+    outStream << header << endl;
+    for (unsigned i = 0; i < lidarTTC.size(); i++)
+    {
+        outStream << i << "," << lidarTTC.at(i);
+        for (const auto & pair : cameraTTC)
+        {
+            outStream << "," << pair.second.at(i);
+        }
+        outStream << endl;
+    }
     return 0;
 }

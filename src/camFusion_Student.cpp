@@ -139,7 +139,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
     if(bWait)
     {
-        cv::waitKey(100); // wait for key to be pressed
+        //cv::waitKey(100); // wait for key to be pressed
     }
 }
 
@@ -218,7 +218,7 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
     double dT = 1 / frameRate;
     TTC = dT / (medDistRatio - 1);
     
-    cout << "computeTTCCamera: " << "TTC=" << TTC << endl;
+    //cout << "computeTTCCamera: " << "TTC=" << TTC << endl;
 }
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr RemoveLidarOutliers(const std::vector<LidarPoint> & points)
@@ -226,16 +226,16 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RemoveLidarOutliers(const std::vector<LidarP
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
     for (const auto & p : points)
     {
-        cloud->push_back(pcl::PointXYZ((float)p.x, (float)p.y, (float)p.z));
+        cloud->push_back(pcl::PointXYZ((float)p.x, (float)p.y, 0.0f));
     }
 
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
     tree->setInputCloud (cloud);
 
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-    ec.setClusterTolerance (0.1);
+    ec.setClusterTolerance (0.05); 
     ec.setSearchMethod (tree);
-    ec.setMinClusterSize(5);
+    ec.setMinClusterSize(3);
     ec.setInputCloud (cloud);
     std::vector<pcl::PointIndices> cluster_indices;
     ec.extract (cluster_indices);
@@ -265,7 +265,8 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
     double dT = 1 / frameRate;
     double distRatio = minXCurr / minXPrev;
     TTC =  minXCurr * dT / (minXPrev - minXCurr);
-    cout << "computeTTCLidar: " << "TTC=" << TTC << endl;
+    //cout << minXCurr << "," << minXPrev - minXCurr << endl;
+    //cout << "computeTTCLidar: " << "TTC=" << TTC << endl;
 }
 
 void matchBoundingBoxes(
