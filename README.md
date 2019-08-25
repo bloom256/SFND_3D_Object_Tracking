@@ -33,3 +33,41 @@ In this final project, you will implement the missing parts in the schematic. To
 2. Make a build directory in the top level project directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
 4. Run it: `./3D_object_tracking`.
+
+
+
+## FP.1 Match 3D Objects
+
+matchBoundingBoxes() function is implemented. Each bounding box is assigned the match candidate with the highest number of occurrences.
+
+
+
+## FP.2 Compute Lidar-based TTC
+
+computeTTCLidar() function is implemented. Outliers removing is implemented in RemoveLidarOutliers() function, which do Euclidean clustering on Lidar points, and removes small clusters.
+
+
+
+## FP.3 Associate Keypoint Correspondences with Bounding Boxes
+
+ clusterKptMatchesWithROI() function is implemented.
+
+
+
+## FP.4 Compute Camera-based TTC
+
+computeTTCCamera() function is implemented.  Median distance ratio is used to deal with outliers.
+
+
+
+## FP.5 Performance Evaluation 1
+
+<img src="images/LidarFluct.png" width="779" height="414" />
+
+Small fluctuations in Lidar data, just a few centimeters, can lead to wrong results when relative speed between ego vehicle and tracked vehicle is small. On the graph above we see the wrong estimation at frame 7. Estimated distance delta (frame 6 and 7) is 2cm, but real distance delta is about 6cm. 4cm distance error leads to 20s TTC error.
+The same thing happens when vehicles are not moving - Lidar estimated min distance is a little different every frame, which leads to the wrong TTC. For example, at frame 56 estimated TTC is 27s when real TTC is infinite. Again 5cm distance error leads to wrong TTC estimation.  
+
+
+
+## FP.6 Performance Evaluation 2
+
