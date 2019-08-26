@@ -82,7 +82,7 @@ pair<vector<double>, vector<double>> IterateImages(
     double sensorFrameRate = 10.0 / imgStepWidth; // frames per second for Lidar and camera
     int dataBufferSize = 2;       // no. of images which are held in memory (ring buffer) at the same time
     vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
-    bool bVis = false;            // visualize results
+    bool bVis = true;            // visualize results
 
 
     double averageTTCCam = 0;
@@ -300,7 +300,7 @@ pair<vector<double>, vector<double>> IterateImages(
     }
 
     if (camAverageCounter > 0)
-        cout << "average camera TTC " << averageTTCCam / camAverageCounter;
+        cout << "average camera TTC " << averageTTCCam / camAverageCounter << endl;
     
     return make_pair(lidarTTCs, cameraTTCs);
 }
